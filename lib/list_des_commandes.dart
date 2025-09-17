@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:longrich_supabase_stock/utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'nouvelle_commande.dart';
+import 'models/purchase.dart';
+import 'models/purchase_item.dart';
 
 class PurchasesListPage extends StatefulWidget {
   const PurchasesListPage({super.key});
@@ -13,8 +15,8 @@ class PurchasesListPage extends StatefulWidget {
 
 class _PurchasesListPageState extends State<PurchasesListPage> {
   final supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> _purchases = [];
-  Map<String, List<Map<String, dynamic>>> _itemsCache = {}; // cache produits
+  List<Purchase> _purchases = [];
+  Map<String, List<PurchaseItem>> _itemsCache = {}; // cache des produits
   StreamSubscription? _subPurchases;
   StreamSubscription? _subItems;
   bool _loading = true;
@@ -37,7 +39,9 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
 
       if (res != null) {
         setState(() {
-          _purchases = List<Map<String, dynamic>>.from(res);
+          _purchases = List<Map<String, dynamic>>.from(res)
+              .map((m) => Purchase.fromMap(m))
+              .toList();
         });
       }
     } catch (e) {
@@ -66,23 +70,26 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
     super.dispose();
   }
 
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return '';
-    final dt = DateTime.parse(dateStr).toLocal();
-    return DateFormat('EEEE dd MMM yyyy, HH:mm', 'fr_FR').format(dt);
+  String _formatDate(DateTime? dateTime) {
+    if (dateTime == null) return '';
+    return DateFormat('EEEE dd MMM yyyy, HH:mm', 'fr_FR')
+        .format(dateTime.toLocal());
   }
 
-  Future<List<Map<String, dynamic>>> _loadItems(String purchaseId) async {
+  Future<List<PurchaseItem>> _loadItems(String purchaseId) async {
     if (_itemsCache.containsKey(purchaseId)) {
       return _itemsCache[purchaseId]!;
     }
+
     final res = await supabase
         .from('purchase_items')
-        .select('product_name, quantity_total, quantity_received, quantity_missing')
+        .select()
         .eq('purchase_id', purchaseId);
 
     if (res != null) {
-      _itemsCache[purchaseId] = List<Map<String, dynamic>>.from(res);
+      _itemsCache[purchaseId] = List<Map<String, dynamic>>.from(res)
+          .map((m) => PurchaseItem.fromMap(m))
+          .toList();
       return _itemsCache[purchaseId]!;
     }
     return [];
@@ -99,31 +106,26 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
           : ListView.builder(
         itemCount: _purchases.length,
         itemBuilder: (context, index) {
-          final p = _purchases[index];
-          final total =
-          _currencyFormat.format((p['total_amount'] ?? 0));
-          final totalPv =
-          _currencyFormat.format((p['total_pv'] ?? 0));
-          final buyer = p['buyer_name'] ?? '';
-          final pm = p['payment_method'] ?? '';
-          final created = _formatDate(p['created_at']);
+          final purchase = _purchases[index];
 
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 6.0),
             child: ExpansionTile(
-              title: Text(buyer),
-              subtitle: Text("$pm — $created"),
+              title: Text(purchase.buyerName),
+              subtitle: Text(
+                  "${purchase.paymentMethod} — ${_formatDate(purchase.createdAt)}"),
               trailing: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text("Total: $total GNF"),
-                  Text("PV: $totalPv"),
+                  Text(
+                      "Total: ${_currencyFormat.format(purchase.totalAmount)} GNF"),
+                  Text("PV: ${_currencyFormat.format(purchase.totalPv)}"),
                 ],
               ),
               children: [
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _loadItems(p['id']),
+                FutureBuilder<List<PurchaseItem>>(
+                  future: _loadItems(purchase.id!),
                   builder: (context, snapshot) {
                     if (!snapshot.hasData) {
                       return const Padding(
@@ -140,19 +142,15 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
                     }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: items.map((it) {
-                        final qtyTotal = it['quantity_total'] ?? 0;
-                        final qtyReceived = it['quantity_received'] ?? 0;
-                        final qtyMissing = it['quantity_missing'] ?? 0;
-
+                      children: items.map((item) {
                         return Padding(
                           padding: const EdgeInsets.only(
                               left: 16.0, top: 6, bottom: 6),
                           child: Text(
-                            "${it['product_name']} — "
-                                "Commandé: $qtyTotal | "
-                                "Reçu: $qtyReceived | "
-                                "Manquant: $qtyMissing",
+                            "${item.productName} — "
+                                "Commandé: ${item.quantityTotal} | "
+                                "Reçu: ${item.quantityReceived} | "
+                                "Manquant: ${item.quantityMissing}",
                             style: const TextStyle(fontSize: 14),
                           ),
                         );
@@ -167,29 +165,22 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
                       icon: const Icon(Icons.more_vert),
                       onSelected: (value) async {
                         if (value == 'edit') {
-                          final itemsRes = await supabase
-                              .from('purchase_items')
-                              .select()
-                              .eq('purchase_id', p['id']);
-                          if (itemsRes != null) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => NewPurchasePage(
-                                  purchase: p,
-                                  purchaseItems:
-                                  List<Map<String, dynamic>>.from(
-                                      itemsRes),
-                                ),
+                          final itemsRes = await _loadItems(purchase.id);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => NewPurchasePage(
+                                purchase: purchase,
+                                purchaseItems: itemsRes,
                               ),
-                            ).then((_) =>
-                                _loadPurchases(showLoader: true));
-                          }
+                            ),
+                          ).then((_) => _loadPurchases(showLoader: true));
                         } else if (value == 'delete') {
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (_) => AlertDialog(
-                              title: const Text("Confirmer la suppression"),
+                              title: const Text(
+                                  "Confirmer la suppression"),
                               content: const Text(
                                   "Voulez-vous vraiment supprimer cet achat ?"),
                               actions: [
@@ -210,15 +201,14 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
                             await supabase
                                 .from('purchases')
                                 .delete()
-                                .eq('id', p['id']);
+                                .eq('id', purchase.id);
+                            _itemsCache.remove(purchase.id);
                           }
                         }
                       },
                       itemBuilder: (context) => const [
-                        PopupMenuItem(
-                            value: 'edit', child: Text("Modifier")),
-                        PopupMenuItem(
-                            value: 'delete', child: Text("Supprimer")),
+                        PopupMenuItem(value: 'edit', child: Text("Modifier")),
+                        PopupMenuItem(value: 'delete', child: Text("Supprimer")),
                       ],
                     ),
                   ],
