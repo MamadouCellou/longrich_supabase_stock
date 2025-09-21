@@ -3,8 +3,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'nouvelle_commande.dart';
-import 'list_des_commandes.dart';
+import 'pages/nouvelle_commande.dart';
+import 'pages/list_des_commandes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
