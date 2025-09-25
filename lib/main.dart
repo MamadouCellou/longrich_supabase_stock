@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:get/get.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -44,18 +45,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return GetMaterialApp( // 👈 au lieu de MaterialApp
       title: 'Gestion de Stock Longrich',
       theme: ThemeData(
         primarySwatch: Colors.green,
       ),
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
-      routes: {
-        '/': (_) => const HomePage(),
-        '/new_purchase': (_) => const NewPurchasePage(),
-        '/purchases_list': (_) => const PurchasesListPage(),
-      },
+      getPages: [ // 👈 obligé pour GetMaterialApp (équivalent de routes:)
+        GetPage(name: '/', page: () => const HomePage()),
+        GetPage(name: '/new_purchase', page: () => const NewPurchasePage()),
+        GetPage(name: '/purchases_list', page: () => const PurchasesListPage()),
+      ],
     );
   }
 }

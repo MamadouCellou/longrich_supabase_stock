@@ -20,11 +20,13 @@ OverlayEntry showLoadingSnackbar(BuildContext context, String message) {
               const SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(message, style: const TextStyle(color: Colors.white)),
+                child:
+                    Text(message, style: const TextStyle(color: Colors.black)),
               ),
             ],
           ),
@@ -71,7 +73,7 @@ void showErrorSnackbar({
   required String message,
   Color colorText = Colors.black,
 }) {
-  Color backgroundColor = Colors.red;
+  Color backgroundColor = Colors.red.shade500;
   IconData icon = Icons.error;
 
   Get.rawSnackbar(
@@ -82,7 +84,7 @@ void showErrorSnackbar({
         Expanded(
           child: Text(
             message,
-            style: TextStyle(color: colorText),
+            style: TextStyle(color: colorText, fontWeight: FontWeight.bold),
           ),
         ),
       ],

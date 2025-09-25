@@ -6,9 +6,12 @@ import 'package:longrich_supabase_stock/utils/utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/category.dart';
 import '../models/product.dart';
 import '../models/purchase.dart';
 import '../models/purchase_item.dart';
+import '../services/category_service.dart';
+import '../services/product_service.dart';
 
 class NewPurchasePage extends StatefulWidget {
   final Purchase? purchase;
@@ -35,13 +38,33 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
   List<Product> _products = [];
   bool _loading = false;
 
+  Category? _selectedCategory; // catégorie sélectionnée
+  List<Category> _allCategorie = []; // 🔹 tous les produits (realtime)
 
-  int _currentPage = 0; // 🔹 état pour suivre la page actuelle
+  late final CategoryService _categoryService;
+  late final ProductService _productService;
 
   @override
   void initState() {
     super.initState();
+
     _loadProducts();
+    _productService = ProductService(supabase: Supabase.instance.client);
+    _categoryService = CategoryService(supabase: Supabase.instance.client);
+
+    _categoryService.categoriesRealtime().listen((list) {
+      setState(() {
+        _allCategorie = list;
+        _selectedCategory = list.first;
+      });
+    });
+
+    // Ecoute en temps réel
+    _productService.productsRealtime().listen((list) {
+      setState(() {
+        _products = list;
+      });
+    });
 
     if (widget.purchase != null && widget.purchaseItems != null) {
       final purchase = widget.purchase!;
@@ -268,7 +291,9 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return showErrorSnackbar(context: context, message: "Tous les champs sont obligatoires");
+    }
 
     final items = buildItems(_products);
     if (items.isEmpty) {
@@ -316,9 +341,8 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
         }).eq('id', purchaseId);
 
         print("✅ Mise à jour de la commande $purchaseId réussie");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Achat modifié ✅")),
-        );
+        showSucessSnackbar(context: context, message: "Achat modifié ✅");
+        _resetForm();
       } else {
         print("➡️ Création d'une nouvelle commande");
         final itemsMaps = items.map((e) => e.toMap()).toList();
@@ -338,9 +362,9 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
           throw Exception("Impossible de créer l'achat");
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Achat créé ✅")),
-        );
+        showSucessSnackbar(context: context, message: "Achat créé ✅");
+        _resetForm();
+
       }
 
       if (mounted) Navigator.pop(context);
@@ -348,7 +372,7 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
       print("❌ Erreur: $e");
       print("StackTrace: $st");
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Erreur: $e")));
+          .showSnackBar(SnackBar(content: Text(widget.purchase != null ? "Erreur lors de la modification" : "Erreur lors de l'ajout")));
     } finally {
       setState(() => _loading = false);
     }
@@ -426,8 +450,9 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                   color: Colors.blueGrey,
                 ),
                 child: Text(
-                    "Total montant: ${currencyFormat.format(totalPreview)} — Total PV: ${totalPV.toStringAsFixed(2)}", style: TextStyle(color: Colors.white),),
-
+                  "Total montant: ${currencyFormat.format(totalPreview)} — Total PV: ${totalPV.toStringAsFixed(2)}",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ),
           ),
@@ -448,158 +473,312 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                     ),
                     TextFormField(
                       controller: _gnController,
-                      decoration: const InputDecoration(
-                          labelText: 'GN (Matricule)'),
+                      decoration:
+                          const InputDecoration(labelText: 'GN (Matricule)'),
                       validator: (v) =>
                           v == null || v.isEmpty ? "Matricule requis" : null,
                     ),
-
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: _paymentMethod,
-                      items: const [
-                        DropdownMenuItem(value: 'cash', child: Text("Cash")),
-                        DropdownMenuItem(
-                            value: 'om', child: Text("Orange Money")),
-                        DropdownMenuItem(value: 'debt', child: Text("Dette")),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _paymentMethod,
+                            items: const [
+                              DropdownMenuItem(value: 'cash', child: Text("Cash")),
+                              DropdownMenuItem(value: 'om', child: Text("Orange Money")),
+                              DropdownMenuItem(value: 'debt', child: Text("Dette")),
+                            ],
+                            onChanged: (v) => setState(() => _paymentMethod = v!),
+                            decoration: const InputDecoration(labelText: "Mode de paiement"),
+                          ),
+                        ),
+                        const SizedBox(width: 12), // espace entre les deux
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _purchaseType,
+                            items: const [
+                              DropdownMenuItem(value: 'Rehaussement', child: Text("Rehaussement")),
+                              DropdownMenuItem(value: 'Retail', child: Text("Retail")),
+                            ],
+                            onChanged: (val) => setState(() => _purchaseType = val!),
+                            decoration: const InputDecoration(labelText: "Type d'achat"),
+                            validator: (val) {
+                              if (val == null || val.isEmpty) {
+                                return 'Veuillez choisir un type d\'achat';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
                       ],
-                      onChanged: (v) => setState(() => _paymentMethod = v!),
-                      decoration:
-                          const InputDecoration(labelText: "Mode de paiement"),
-                    ),
-                    DropdownButtonFormField<String>(
-                      value: _purchaseType,
-                      items: const [
-                        DropdownMenuItem(
-                            value: 'Rehaussement', child: Text("Rehaussement")),
-                        DropdownMenuItem(
-                            value: 'Retail', child: Text("Retail")),
-                      ],
-                      onChanged: (val) => setState(() => _purchaseType = val!),
-                      decoration:
-                          const InputDecoration(labelText: "Type d'achat"),
-                      validator: (val) {
-                        if (val == null || val.isEmpty) {
-                          return 'Veuillez choisir un type d\'achat';
-                        }
-                        return null;
-                      },
                     ),
 
                     const SizedBox(height: 20),
-
-
-                    Text("Produits", style: Theme.of(context).textTheme.titleMedium),
-                    // 🔹 Indicateurs de page
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        (_products.length / 5).ceil(),
-                            (index) => Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                          width: _currentPage == index ? 12 : 8,
-                          height: _currentPage == index ? 12 : 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _currentPage == index ? Colors.blue : Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    SizedBox(
-                      height: 480,
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: PageView.builder(
-                              itemCount: (_products.length / 5).ceil(),
-                              onPageChanged: (index) {
-                                setState(() => _currentPage = index);
-                              },
-                              itemBuilder: (context, pageIndex) {
-                                final start = pageIndex * 5;
-                                final end = (start + 5) > _products.length
-                                    ? _products.length
-                                    : start + 5;
-                                final pageProducts = _products.sublist(start, end);
-
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                                  child: Column(
-                                    children: pageProducts.map((p) {
-                                      final qty = _quantities[p.id] ?? 0;
-                                      final controller =
-                                      TextEditingController(text: qty.toString());
-
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(vertical: 6),
-                                        child: ListTile(
-                                          title: Text(p.name),
-                                          subtitle: Text(
-                                              "GNF: ${currencyFormat.format(p.pricePartner)} — PV: ${p.pv}"),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.remove),
-                                                onPressed: qty > 0
-                                                    ? () => setState(() =>
-                                                _quantities[p.id!] = qty - 1)
-                                                    : null,
-                                              ),
-
-                                              // 🔹 TextField inline pour éditer la quantité
-                                              SizedBox(
-                                                width: 50,
-                                                child: TextField(
-                                                  controller: controller,
-                                                  textAlign: TextAlign.center,
-                                                  keyboardType: TextInputType.number,
-                                                  decoration: const InputDecoration(
-                                                    border: OutlineInputBorder(),
-                                                    contentPadding: EdgeInsets.symmetric(
-                                                        vertical: 4, horizontal: 4),
-                                                  ),
-                                                  onSubmitted: (val) {
-                                                    final newQty = int.tryParse(val) ?? qty;
-                                                    setState(() => _quantities[p.id!] = newQty);
-                                                  },
-                                                ),
-                                              ),
-
-                                              IconButton(
-                                                icon: const Icon(Icons.add),
-                                                onPressed: () =>
-                                                    setState(() => _quantities[p.id!] = qty + 1),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Titre
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Produits",
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            GestureDetector(
+                              onTap: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text("Confirmation"),
+                                    content: const Text(
+                                      "Voulez-vous vraiment réinitialiser la quantité de tous les produits à 0 ?",
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context)
+                                            .pop(false), // Annuler
+                                        child: const Text("Annuler"),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.of(context)
+                                            .pop(true), // Confirmer
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                Colors.red.shade300),
+                                        child: const Text("Oui, réinitialiser"),
+                                      ),
+                                    ],
                                   ),
                                 );
+
+                                if (confirm == true) {
+                                  setState(() {
+                                    for (var p in _products) {
+                                      _quantities[p.id!] = 0;
+                                    }
+                                  });
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          "Toutes les quantités ont été réinitialisées ✅"),
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
                               },
+                              child: Text(
+                                "Tout à zéro",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+
+                        // 🔹 Liste horizontale des catégories
+                        SizedBox(
+                          height: 50,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _allCategorie.length,
+                            itemBuilder: (context, index) {
+                              final cat = _allCategorie[index];
+                              final isSelected =
+                                  _selectedCategory?.id == cat.id;
+
+                              return GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCategory = cat;
+                                  });
+                                },
+                                child: Container(
+                                  margin:
+                                      const EdgeInsets.symmetric(horizontal: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? Colors.blue
+                                        : Colors.grey.shade200,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      cat.name,
+                                      style: TextStyle(
+                                        color: isSelected
+                                            ? Colors.white
+                                            : Colors.black87,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
 
+                        const SizedBox(height: 16),
 
-        ElevatedButton(
-                      onPressed: _loading ? null : _showSummaryBottomSheet,
-                      child: _loading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text(widget.purchase != null
-                              ? "Modifier"
-                              : "Enregistrer"),
+                        // 🔹 Liste des produits filtrée par catégorie
+                        SizedBox(
+                          height:
+                              480, // hauteur fixe pour éviter Expanded dans ListView
+                          child: _selectedCategory == null
+                              ? Center(
+                                  child: Text(
+                                    "Veuillez sélectionner une catégorie",
+                                    style:
+                                        TextStyle(color: Colors.grey.shade600),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  itemCount: _products
+                                      .where((p) =>
+                                          p.categoryId == _selectedCategory!.id)
+                                      .length,
+                                  itemBuilder: (context, index) {
+                                    final product = _products
+                                        .where((p) =>
+                                            p.categoryId ==
+                                            _selectedCategory!.id)
+                                        .toList()[index];
+                                    final qty = _quantities[product.id] ?? 0;
+                                    final controller = TextEditingController(
+                                        text: qty.toString());
+
+                                    return Card(
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 6),
+                                      child: ListTile(
+                                        title: Text(product.name),
+                                        subtitle: Text(
+                                            "GNF: ${currencyFormat.format(product.pricePartner)} — PV: ${product.pv}"),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.remove),
+                                              onPressed: qty > 0
+                                                  ? () => setState(() =>
+                                                      _quantities[product.id!] =
+                                                          qty - 1)
+                                                  : null,
+                                            ),
+                                            SizedBox(
+                                              width: 60,
+                                              child: TextField(
+                                                controller: controller,
+                                                textAlign: TextAlign.center,
+                                                keyboardType:
+                                                    TextInputType.number,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  border: OutlineInputBorder(),
+                                                  contentPadding:
+                                                      EdgeInsets.symmetric(
+                                                          vertical: 4,
+                                                          horizontal: 4),
+                                                ),
+                                                onSubmitted: (val) {
+                                                  final newQty =
+                                                      int.tryParse(val) ?? qty;
+                                                  setState(() =>
+                                                      _quantities[product.id!] =
+                                                          newQty);
+                                                },
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.add),
+                                              onPressed: () => setState(() =>
+                                                  _quantities[product.id!] =
+                                                      qty + 1),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
+        bottomSheet: Padding(
+          padding: const EdgeInsets.all(12), // petit espace autour
+          child: SizedBox(
+            width: double.infinity, // largeur max
+            height: 40, // hauteur standard bouton
+            child: ElevatedButton(
+              style: ButtonStyle(
+                backgroundColor: WidgetStatePropertyAll(Colors.blueGrey)
+              ), onPressed: _loading
+                ? null
+                : () {
+              if (!_formKey.currentState!.validate()) {
+                showErrorSnackbar(
+                  context: context,
+                  message: "Tous les champs sont obligatoires",
+                );
+                return;
+              }
+              final items = buildItems(_products);
+
+              if (items.isEmpty) {
+                showErrorSnackbar(
+                  context: context,
+                  message: "Veuillez ajouter au moins un produit",
+                );
+                return;
+              }
+
+              // ✅ Si tout est bon, on lance le submit
+              _showSummaryBottomSheet();
+            },
+              child: _loading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Text(
+                      widget.purchase != null ? "Modifier" : "Enregistrer",
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+            ),
+          ),
+        ),
       ),
     );
   }
+
+  void _resetForm() {
+    setState(() {
+
+      // 🔹 Si tu as un formKey, on reset aussi la validation
+      _formKey.currentState?.reset();
+
+      // 🔹 Réinitialiser les TextEditingController
+      _buyerController.clear();
+      _gnController.clear();
+
+      // 🔹 Réinitialiser les Dropdowns
+      _paymentMethod = 'cash'; // valeur par défaut
+      _purchaseType = 'Rehaussement'; // valeur par défaut
+
+      // 🔹 Réinitialiser les quantités de produits
+      _quantities.clear();
+
+
+    });
+  }
+
 }

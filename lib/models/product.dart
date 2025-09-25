@@ -5,6 +5,7 @@ class Product {
   final double pv;
   final String? description;
   final DateTime? createdAt;
+  final String? categoryId; // Nouvelle propriété
 
   Product({
     this.id,
@@ -13,6 +14,7 @@ class Product {
     required this.pv,
     this.description,
     this.createdAt,
+    this.categoryId,
   });
 
   factory Product.fromMap(Map<String, dynamic> map) {
@@ -25,6 +27,7 @@ class Product {
       createdAt: map['created_at'] != null
           ? DateTime.parse(map['created_at'] as String)
           : null,
+      categoryId: map['category_id'] as String?, // récupère l'id de la catégorie
     );
   }
 
@@ -36,6 +39,7 @@ class Product {
       'pv': pv,
       'description': description,
       'created_at': createdAt?.toIso8601String(),
+      'category_id': categoryId, // ajoute l'id de catégorie
     };
   }
 }
