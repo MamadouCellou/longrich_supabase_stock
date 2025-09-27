@@ -15,8 +15,8 @@ class Purchase {
 
   /// 🔹 Nouveaux champs
   final String? comment;
-  final bool positioned;
-  final bool validated;
+  bool positioned;
+  bool validated;
 
   Purchase({
     this.id,

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
+import 'package:longrich_supabase_stock/services/purchase_service.dart';
+import 'package:longrich_supabase_stock/utils/snackbars.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'nouvelle_commande.dart';
 import '../models/purchase.dart';
@@ -204,6 +207,7 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
         _loading = false;
         _isLoadingMore = false;
       });
+      print("Les commandes : ${_purchases}");
     }
   }
 
@@ -373,6 +377,8 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
                   child: Builder(builder: (context) {
                     // 🔹 Appliquer le filtre sur la liste locale
                     final filteredPurchases = _applyFilter(_purchases);
+                    PurchaseService purchaseService =
+                        PurchaseService(supabase: supabase);
 
                     return ListView.builder(
                       itemCount: filteredPurchases.length + (_hasMore ? 1 : 0),
@@ -403,133 +409,286 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
                         final items = _itemsCache[purchase.id] ?? [];
 
                         return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6.0),
-                          child: ExpansionTile(
-                            title: Text(purchase.buyerName),
-                            subtitle: Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                // 🔹 Nom et type
-                                SizedBox(
-                                  width: 150, // Ajustable selon espace
-                                  child: Text(
-                                    purchase.gn,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                            padding: const EdgeInsets.symmetric(vertical: 6.0),
+                            child: Slidable(
+                              key: ValueKey(purchase.id),
 
-                                SizedBox(
-                                  width: 150, // Ajustable selon espace
-                                  child: Text(
-                                    purchase.purchaseType,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontStyle: FontStyle.italic),
-                                  ),
-                                ),
-
-                                // 🔹 Badge positionné
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: purchase.positioned
-                                        ? Colors.blue.shade100
-                                        : Colors.grey.shade300,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    purchase.positioned ? "Positionné" : "Non positionné",
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: purchase.positioned ? Colors.blue : Colors.black54,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-
-                                // 🔹 Badge validé
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: purchase.validated
-                                        ? Colors.green.shade100
-                                        : Colors.orange.shade100,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    purchase.validated ? "Validée" : "Non validée",
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: purchase.validated ? Colors.green : Colors.orange,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            trailing: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text("Total: ${_currencyFormat.format(purchase.totalAmount)} GNF"),
-                                Text("PV: ${_currencyFormat.format(purchase.totalPv)}"),
-                              ],
-                            ),
-                            children: [
-                              // 🔹 Liste des items
-                              if (items.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.all(8.0),
-                                  child: Text("Aucun produit"),
-                                )
-                              else
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: items.map((item) {
-                                    final manquant = item.quantityTotal - item.quantityReceived;
-                                    String text;
-                                    if (item.quantityReceived == item.quantityTotal) {
-                                      text = "${item.quantityTotal} ${item.productName} — Tout reçu";
-                                    } else if (item.quantityReceived == 0) {
-                                      text = "${item.quantityTotal} ${item.productName} — Aucun reçu";
-                                    } else {
-                                      text =
-                                      "${item.quantityTotal} ${item.productName} — ${item.quantityReceived} reçu${item.quantityReceived > 1 ? 's' : ''}, $manquant manquant${manquant > 1 ? 's' : ''}";
-                                    }
-                                    return Padding(
-                                      padding: const EdgeInsets.only(left: 30, top: 6, bottom: 6),
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(text, style: const TextStyle(fontSize: 14)),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-
-                              // 🔹 Row des actions
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              // ➡️ Glissement droite → gauche : Valider / Invalider
+                              endActionPane: ActionPane(
+                                motion: const DrawerMotion(),
+                                extentRatio: 0.25,
                                 children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 16.0),
-                                    child: Text(_formatDate(purchase.createdAt)),
-                                  ),
-                                  PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_vert),
-                                    onSelected: (value) async {
-                                      // 🔹 Logique Edit / Delete reste identique
+                                  // Exemple pour la partie Valider / Invalider
+                                  SlidableAction(
+                                    onPressed: (context) async {
+                                      try {
+                                        if (!purchase.validated) {
+                                          // 🔹 Valider directement
+                                          final success = await purchaseService.markValidated(purchase.id!);
+                                          if (!mounted) return;
+                                          if (success) {
+                                            setState(() => purchase.validated = true);
+                                            showSucessSnackbar(
+                                                context: context,
+                                                message: "Commande validée ✅");
+                                          }
+                                        } else {
+                                          // 🔹 Invalider => nécessite confirmation
+                                          final confirmed = await showConfirmationBottomSheet(
+                                            context: context,
+                                            action: "Invalider",
+                                            correctName: purchase.buyerName,
+                                            correctMatricule: purchase.gn,
+                                          );
+
+                                          if (confirmed != true) return; // Stop si non confirmé
+
+                                          final success = await purchaseService.unmarkValidated(purchase.id!);
+                                          if (!mounted) return;
+                                          if (success) {
+                                            setState(() => purchase.validated = false);
+                                            showSucessSnackbar(
+                                                context: context,
+                                                message: "Commande invalidée ❌");
+                                          }
+                                        }
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        showErrorSnackbar(
+                                            context: context,
+                                            message: "Erreur inattendue ❌ : $e");
+                                      }
                                     },
-                                    itemBuilder: (context) => const [
-                                      PopupMenuItem(value: 'edit', child: Text("Modifier")),
-                                      PopupMenuItem(value: 'delete', child: Text("Supprimer")),
+                                    backgroundColor: purchase.validated ? Colors.orange : Colors.green,
+                                    foregroundColor: Colors.white,
+                                    icon: purchase.validated ? Icons.undo : Icons.check_circle,
+                                    label: purchase.validated ? "Invalider" : "Valider",
+                                  ),
+
+                                ],
+                              ),
+
+                              // ⬅️ Glissement gauche → droite : Positionner / Dépositionner
+                              startActionPane: ActionPane(
+                                motion: const DrawerMotion(),
+                                extentRatio: 0.25,
+                                children: [
+                                  // Exemple pour Positionner / Déposition
+                                  SlidableAction(
+                                    onPressed: (context) async {
+                                      try {
+                                        if (!purchase.positioned) {
+                                          // 🔹 Positionner directement
+                                          final success = await purchaseService.markPositioned(purchase.id!);
+                                          if (!mounted) return;
+                                          if (success) {
+                                            setState(() => purchase.positioned = true);
+                                            showSucessSnackbar(
+                                                context: context,
+                                                message: "Commande positionnée 📌");
+                                          }
+                                        } else {
+                                          // 🔹 Déposition => nécessite confirmation
+                                          final confirmed = await showConfirmationBottomSheet(
+                                            context: context,
+                                            action: "Déposition",
+                                            correctName: purchase.buyerName,
+                                            correctMatricule: purchase.gn,
+                                          );
+
+                                          if (confirmed != true) return; // Stop si non confirmé
+
+                                          final success = await purchaseService.unmarkPositioned(purchase.id!);
+                                          if (!mounted) return;
+                                          if (success) {
+                                            setState(() => purchase.positioned = false);
+                                            showSucessSnackbar(
+                                                context: context,
+                                                message: "Commande dépositionnée ❌");
+                                          }
+                                        }
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        showErrorSnackbar(
+                                            context: context,
+                                            message: "Erreur inattendue ❌ : $e");
+                                      }
+                                    },
+                                    backgroundColor: purchase.positioned ? Colors.orange : Colors.blue,
+                                    foregroundColor: Colors.white,
+                                    icon: purchase.positioned ? Icons.undo : Icons.push_pin,
+                                    label: purchase.positioned ? "Déposition" : "Positionner",
+                                  ),
+
+                                ],
+                              ),
+
+                              // 🔹 ExpansionTile inchangé (affichage de la commande, badges, items, etc.)
+                              child: ExpansionTile(
+                                title: Text(purchase.buyerName),
+                                subtitle: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      width: 150,
+                                      child: Text(
+                                        purchase.gn,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: 150,
+                                      child: Text(
+                                        purchase.purchaseType,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontStyle: FontStyle.italic),
+                                      ),
+                                    ),
+                                    // Badge Positionné
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: purchase.positioned ? Colors.green : Colors.red,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        purchase.positioned ? "Positionné" : "Non positionné",
+                                        style: const TextStyle(fontSize: 12, color: Colors.white),
+                                      ),
+                                    ),
+                                    // Badge Validé
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: purchase.validated ? Colors.green : Colors.red,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        purchase.validated ? "Validée" : "Non validée",
+                                        style: const TextStyle(fontSize: 12, color: Colors.white),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text("Total: ${_currencyFormat.format(purchase.totalAmount)} GNF"),
+                                    Text("PV: ${_currencyFormat.format(purchase.totalPv)}"),
+                                  ],
+                                ),
+                                children: [
+                                  if (items.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.all(8.0),
+                                      child: Text("Aucun produit"),
+                                    )
+                                  else
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: items.map((item) {
+                                        final manquant = item.quantityTotal - item.quantityReceived;
+                                        String text;
+                                        if (item.quantityReceived == item.quantityTotal) {
+                                          text = "${item.quantityTotal} ${item.productName} — Tout reçu";
+                                        } else if (item.quantityReceived == 0) {
+                                          text = "${item.quantityTotal} ${item.productName} — Aucun reçu";
+                                        } else {
+                                          text =
+                                          "${item.quantityTotal} ${item.productName} — ${item.quantityReceived} reçu${item.quantityReceived > 1 ? 's' : ''}, $manquant manquant${manquant > 1 ? 's' : ''}";
+                                        }
+                                        return Padding(
+                                          padding: const EdgeInsets.only(left: 30, top: 6, bottom: 6),
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(text, style: const TextStyle(fontSize: 14)),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  // Row des actions classiques
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 16.0),
+                                        child: Text(_formatDate(purchase.createdAt)),
+                                      ),
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert),
+                                        onSelected: (value) async {
+                                          if (value == 'edit') {
+                                            final itemsRes = await _loadItems(purchase.id!);
+                                            await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => NewPurchasePage(
+                                                  purchase: purchase,
+                                                  purchaseItems: itemsRes,
+                                                ),
+                                              ),
+                                            );
+                                            _loadPurchases(reset: true); // 🔹 Recharger après modification
+                                          } else if (value == 'delete') {
+                                            final confirm = await showDialog<bool>(
+                                              context: context,
+                                              builder: (_) => AlertDialog(
+                                                title: const Text("Confirmer la suppression"),
+                                                content: const Text("Voulez-vous vraiment supprimer cet achat ?"),
+                                                actions: [
+                                                  TextButton(
+                                                    child: const Text("Annuler"),
+                                                    onPressed: () => Navigator.pop(context, false),
+                                                  ),
+                                                  TextButton(
+                                                    child: const Text("Supprimer"),
+                                                    onPressed: () => Navigator.pop(context, true),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+
+                                            if (confirm == true) {
+                                              try {
+                                                await supabase
+                                                    .from('purchases')
+                                                    .delete()
+                                                    .eq('id', purchase.id!);
+
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(
+                                                      content: Text(
+                                                          "Commande de ${purchase.buyerName} supprimée avec succès")),
+                                                );
+
+                                                // 🔹 Mise à jour locale instantanée sans loader global
+                                                setState(() {
+                                                  _purchases.removeWhere((p) => p.id == purchase.id);
+                                                  _itemsCache.remove(purchase.id);
+                                                });
+                                              } catch (e) {
+                                                print("Erreur suppression: $e");
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(
+                                                      content: Text("Erreur lors de la suppression")),
+                                                );
+                                              }
+                                            }
+                                          }
+                                        },
+                                        itemBuilder: (context) => const [
+                                          PopupMenuItem(value: 'edit', child: Text("Modifier")),
+                                          PopupMenuItem(value: 'delete', child: Text("Supprimer")),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-
+                            )
                         );
                       },
                     );
@@ -537,4 +696,86 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
                 ),
     );
   }
+
+  Future<bool?> showConfirmationBottomSheet({
+    required BuildContext context,
+    required String action, // "Deposition" ou "Invalider"
+    required String correctName, // Nom exact de la commande
+    required String correctMatricule, // Matricule exact de la commande
+  }) async {
+    final _formKey = GlobalKey<FormState>();
+    String enteredName = '';
+    String enteredMatricule = '';
+
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "$action la commande",
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  decoration: const InputDecoration(
+                    labelText: "Nom",
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) =>
+                  (value == null || value.isEmpty) ? "Champ requis" : null,
+                  onSaved: (value) => enteredName = value!.trim(),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  decoration: const InputDecoration(
+                    labelText: "Matricule",
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) =>
+                  (value == null || value.isEmpty) ? "Champ requis" : null,
+                  onSaved: (value) => enteredMatricule = value!.trim(),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      _formKey.currentState!.save();
+
+                      // ✅ Vérification que les infos saisies correspondent exactement
+                      if (enteredName == correctName &&
+                          enteredMatricule == correctMatricule) {
+                        Navigator.of(context).pop(true); // Confirme l'action
+                      } else {
+                        // ❌ Affiche un message si incorrect
+                        showErrorSnackbar(context: context, message: "Nom ou matricule incorrect. Vérifiez vos saisies ❌");
+                      }
+                    }
+                  },
+                  child: const Text("Confirmer"),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
 }

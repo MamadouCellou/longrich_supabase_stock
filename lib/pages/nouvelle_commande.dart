@@ -420,11 +420,13 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                         children: [
                           // Titre
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 "Produits",
-                                style: Theme.of(context).textTheme.titleMedium,
+                                style:
+                                    Theme.of(context).textTheme.titleMedium,
                               ),
                               GestureDetector(
                                 onTap: () async {
@@ -437,18 +439,20 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                                       ),
                                       actions: [
                                         TextButton(
-                                          onPressed: () => Navigator.of(context)
-                                              .pop(false), // Annuler
+                                          onPressed: () =>
+                                              Navigator.of(context)
+                                                  .pop(false), // Annuler
                                           child: const Text("Annuler"),
                                         ),
                                         ElevatedButton(
-                                          onPressed: () => Navigator.of(context)
-                                              .pop(true), // Confirmer
+                                          onPressed: () =>
+                                              Navigator.of(context)
+                                                  .pop(true), // Confirmer
                                           style: ElevatedButton.styleFrom(
                                               backgroundColor:
                                                   Colors.red.shade300),
-                                          child:
-                                              const Text("Oui, réinitialiser"),
+                                          child: const Text(
+                                              "Oui, réinitialiser"),
                                         ),
                                       ],
                                     ),
@@ -461,7 +465,8 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                                       }
                                     });
 
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
                                       const SnackBar(
                                         content: Text(
                                             "Toutes les quantités ont été réinitialisées ✅"),
@@ -508,7 +513,8 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                                       color: isSelected
                                           ? Colors.blue
                                           : Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(20),
+                                      borderRadius:
+                                          BorderRadius.circular(20),
                                     ),
                                     child: Center(
                                       child: Text(
@@ -541,76 +547,105 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                                           color: Colors.grey.shade600),
                                     ),
                                   )
-                                : ListView.builder(
-                                    itemCount: _products
-                                        .where((p) =>
-                                            p.categoryId ==
-                                            _selectedCategory!.id)
-                                        .length,
-                                    itemBuilder: (context, index) {
-                                      final product = _products
-                                          .where((p) =>
-                                              p.categoryId ==
-                                              _selectedCategory!.id)
-                                          .toList()[index];
-                                      final qty = _quantities[product.id] ?? 0;
-                                      final controller = TextEditingController(
-                                          text: qty.toString());
+                                : Expanded(
+                                    child: SingleChildScrollView(
+                                      padding: EdgeInsets.only(
+                                        bottom:
+                                        MediaQuery.of(context).viewInsets.bottom,
+                                      ),
+                                      child: ListView.builder(
+                                        physics:
+                                            NeverScrollableScrollPhysics(),
+                                        shrinkWrap: true,
+                                        itemCount: _products
+                                            .where((p) =>
+                                                p.categoryId ==
+                                                _selectedCategory!.id)
+                                            .length,
+                                        itemBuilder: (context, index) {
+                                          final product = _products
+                                              .where((p) =>
+                                                  p.categoryId ==
+                                                  _selectedCategory!.id)
+                                              .toList()[index];
+                                          final qty =
+                                              _quantities[product.id] ?? 0;
+                                          final controller =
+                                              TextEditingController(
+                                                  text: qty.toString());
 
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(
-                                            vertical: 6),
-                                        child: ListTile(
-                                          title: Text(product.name),
-                                          subtitle: Text(
-                                              "GNF: ${currencyFormat.format(product.pricePartner)} — PV: ${product.pv}"),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.remove),
-                                                onPressed: qty > 0
-                                                    ? () => setState(() =>
-                                                        _quantities[product
-                                                            .id!] = qty - 1)
-                                                    : null,
-                                              ),
-                                              SizedBox(
-                                                width: 60,
-                                                child: TextField(
-                                                  controller: controller,
-                                                  textAlign: TextAlign.center,
-                                                  keyboardType:
-                                                      TextInputType.number,
-                                                  decoration:
-                                                      const InputDecoration(
-                                                    border:
-                                                        OutlineInputBorder(),
-                                                    contentPadding:
-                                                        EdgeInsets.symmetric(
-                                                            vertical: 4,
-                                                            horizontal: 4),
+                                          return Card(
+                                            margin:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 6),
+                                            child: ListTile(
+                                              title: Text(product.name),
+                                              subtitle: Text(
+                                                  "GNF: ${currencyFormat.format(product.pricePartner)} — PV: ${product.pv}"),
+                                              trailing: Row(
+                                                mainAxisSize:
+                                                    MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.remove),
+                                                    onPressed: qty > 0
+                                                        ? () => setState(() =>
+                                                            _quantities[product
+                                                                    .id!] =
+                                                                qty - 1)
+                                                        : null,
                                                   ),
-                                                  onSubmitted: (val) {
-                                                    final newQty =
-                                                        int.tryParse(val) ??
-                                                            qty;
-                                                    setState(() => _quantities[
-                                                        product.id!] = newQty);
-                                                  },
-                                                ),
+                                                  SizedBox(
+                                                    width: 60,
+                                                    child: TextField(
+                                                      controller:
+                                                          controller,
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      keyboardType:
+                                                          TextInputType
+                                                              .number,
+                                                      decoration:
+                                                          const InputDecoration(
+                                                        border:
+                                                            OutlineInputBorder(),
+                                                        contentPadding:
+                                                            EdgeInsets
+                                                                .symmetric(
+                                                                    vertical:
+                                                                        4,
+                                                                    horizontal:
+                                                                        4),
+                                                      ),
+                                                      onSubmitted: (val) {
+                                                        final newQty =
+                                                            int.tryParse(
+                                                                    val) ??
+                                                                qty;
+                                                        setState(() =>
+                                                            _quantities[product
+                                                                    .id!] =
+                                                                newQty);
+                                                      },
+                                                    ),
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.add),
+                                                    onPressed: () => setState(
+                                                        () => _quantities[
+                                                                product
+                                                                    .id!] =
+                                                            qty + 1),
+                                                  ),
+                                                ],
                                               ),
-                                              IconButton(
-                                                icon: const Icon(Icons.add),
-                                                onPressed: () => setState(() =>
-                                                    _quantities[product.id!] =
-                                                        qty + 1),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
                                   ),
                           ),
                           SizedBox(
@@ -685,17 +720,38 @@ class _NewPurchasePageState extends State<NewPurchasePage> {
                     },
               child: _loading
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : Text(
-                      _currentPage == 0
-                          ? "Continuer à sélectionner les produits"
-                          : (widget.purchase != null
-                              ? "Résumé et modification"
-                              : "Résumé et ajout"),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                  : Row(
+                      children: [
+                        _currentPage == 1
+                            ? IconButton(
+                                icon: Icon(
+                                  Icons.arrow_back,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _pageController.jumpToPage(0);
+                                    setState(() {
+                                      _currentPage = 0;
+                                    });
+                                  });
+                                },
+                              )
+                            : SizedBox(),
+                        Text(
+                          _currentPage == 0
+                              ? "Continuer à sélectionner les produits"
+                              : (widget.purchase != null
+                                  ? "Résumé et modification"
+                                  : "Résumé et ajout"),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
             ),
           ),

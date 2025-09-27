@@ -91,6 +91,20 @@ class PurchaseService {
     }
   }
 
+  /// 🔹 Marquer comme depositionnée
+  Future<bool> unmarkPositioned(String purchaseId) async {
+    try {
+      await supabase
+          .from('purchases')
+          .update({'positioned': false})
+          .eq('id', purchaseId);
+      return true;
+    } catch (e) {
+      print("Erreur de depositionnement: $e");
+      return false;
+    }
+  }
+
   /// 🔹 Marquer comme validée
   Future<bool> markValidated(String purchaseId) async {
     try {
@@ -101,6 +115,20 @@ class PurchaseService {
       return true;
     } catch (e) {
       print("Erreur validation: $e");
+      return false;
+    }
+  }
+
+  /// Annule la validation
+  Future<bool> unmarkValidated(String purchaseId) async {
+    try {
+      await supabase
+          .from('purchases')
+          .update({'validated': false})
+          .eq('id', purchaseId);
+      return true;
+    } catch (e) {
+      print("Erreur d'invalidation: $e");
       return false;
     }
   }
