@@ -4,11 +4,19 @@ class Purchase {
   final String paymentMethod;
   final String gn;
   final String purchaseType;
-  final DateTime? createdAt;
 
-  /// Ajout des champs de totaux
+  /// 🔹 Suivi des dates
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  /// 🔹 Champs de totaux
   final double totalAmount;
   final double totalPv;
+
+  /// 🔹 Nouveaux champs
+  final String? comment;
+  final bool positioned;
+  final bool validated;
 
   Purchase({
     this.id,
@@ -17,8 +25,12 @@ class Purchase {
     required this.gn,
     required this.purchaseType,
     this.createdAt,
+    this.updatedAt,
     this.totalAmount = 0.0,
     this.totalPv = 0.0,
+    this.comment,
+    this.positioned = false,
+    this.validated = false,
   });
 
   factory Purchase.fromMap(Map<String, dynamic> map) {
@@ -31,10 +43,14 @@ class Purchase {
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'] as String)
           : null,
-
-      /// Important : récupérer correctement depuis la DB
+      updatedAt: map['updated_at'] != null
+          ? DateTime.tryParse(map['updated_at'] as String)
+          : null,
       totalAmount: (map['total_amount'] as num?)?.toDouble() ?? 0.0,
       totalPv: (map['total_pv'] as num?)?.toDouble() ?? 0.0,
+      comment: map['comment'] as String?,
+      positioned: map['positioned'] as bool? ?? false,
+      validated: map['validated'] as bool? ?? false,
     );
   }
 
@@ -46,15 +62,17 @@ class Purchase {
       'gn': gn,
       'purchase_type': purchaseType,
       'created_at': createdAt?.toIso8601String(),
-
-      /// Important : sauver aussi les totaux
+      'updated_at': updatedAt?.toIso8601String(),
       'total_amount': totalAmount,
       'total_pv': totalPv,
+      'comment': comment,
+      'positioned': positioned,
+      'validated': validated,
     };
   }
 
   @override
   String toString() {
-    return "Purchase{id: $id, buyerName: $buyerName, paymentMethod: $paymentMethod, gn: $gn, purchaseType: $purchaseType, createdAt: $createdAt, totalAmount: $totalAmount, totalPv: $totalPv}";
+    return "Purchase{id: $id, buyerName: $buyerName, paymentMethod: $paymentMethod, gn: $gn, purchaseType: $purchaseType, createdAt: $createdAt, updatedAt: $updatedAt, totalAmount: $totalAmount, totalPv: $totalPv, comment: $comment, positioned: $positioned, validated: $validated}";
   }
 }

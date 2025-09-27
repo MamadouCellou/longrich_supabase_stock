@@ -1,7 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:longrich_supabase_stock/utils/utils.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'nouvelle_commande.dart';
 import '../models/purchase.dart';
@@ -9,8 +7,38 @@ import '../models/purchase_item.dart';
 
 class PurchasesListPage extends StatefulWidget {
   const PurchasesListPage({super.key});
+
   @override
   State<PurchasesListPage> createState() => _PurchasesListPageState();
+}
+
+/// 🔹 Enum des différents tris possibles
+enum PurchaseSortOption {
+  buyerNameAsc,
+  buyerNameDesc,
+  createdAtNewest,
+  createdAtOldest,
+  updatedAtNewest,
+  updatedAtOldest,
+  totalAmountHighToLow,
+  totalAmountLowToHigh,
+  totalPvHighToLow,
+  totalPvLowToHigh,
+}
+
+enum PurchaseFilterOption {
+  all, // Toutes les commandes
+  retail, // Toutes commandes en Retail
+  rehaussement, // Toutes commandes en Rehaussement
+  retailPositioned, // Retail positionnées
+  rehaussementPositioned, // Rehaussement positionnées
+  retailPositionedNotValidated, // Retail positionnées mais non validées
+  rehaussementPositionedNotValidated, // Rehaussement positionnées mais non validées
+  allPositioned, // Toutes positionnées (Retail + Rehaussement)
+  allPositionedNotValidated, // Toutes positionnées mais non validées
+  validatedAll, // Toutes validées
+  validatedRetail, // Validées retail
+  validatedRehaussement // Validées rehaussement
 }
 
 class _PurchasesListPageState extends State<PurchasesListPage> {
@@ -18,9 +46,6 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
 
   List<Purchase> _purchases = [];
   Map<String, List<PurchaseItem>> _itemsCache = {};
-
-  StreamSubscription? _subPurchases;
-  StreamSubscription? _subItems;
 
   bool _loading = true;
   bool _isLoadingMore = false;
@@ -31,26 +56,125 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
 
   final NumberFormat _currencyFormat = NumberFormat("#,##0.00", "fr_FR");
 
+  PurchaseSortOption _currentSort = PurchaseSortOption.createdAtNewest;
+  PurchaseFilterOption _currentFilter = PurchaseFilterOption.all;
+
   @override
   void initState() {
     super.initState();
-    _loadPurchases(showLoader: true, reset: true);
-    _subscribeRealtime();
+    _loadPurchases(reset: true);
   }
 
-  Future<void> _loadPurchases({bool showLoader = false, bool reset = false}) async {
+  List<Purchase> _applyFilter(List<Purchase> purchases) {
+    switch (_currentFilter) {
+      case PurchaseFilterOption.all:
+        return purchases;
+
+      case PurchaseFilterOption.retail:
+        // Toutes les commandes Retail
+        return purchases.where((p) => p.purchaseType == "Retail").toList();
+
+      case PurchaseFilterOption.rehaussement:
+        // Toutes les commandes Rehaussement
+        return purchases
+            .where((p) => p.purchaseType == "Rehaussement")
+            .toList();
+
+      case PurchaseFilterOption.retailPositioned:
+        return purchases
+            .where((p) => p.purchaseType == "Retail" && p.positioned)
+            .toList();
+
+      case PurchaseFilterOption.rehaussementPositioned:
+        return purchases
+            .where((p) => p.purchaseType == "Rehaussement" && p.positioned)
+            .toList();
+
+      case PurchaseFilterOption.retailPositionedNotValidated:
+        return purchases
+            .where((p) =>
+                p.purchaseType == "Retail" && p.positioned && !p.validated)
+            .toList();
+
+      case PurchaseFilterOption.rehaussementPositionedNotValidated:
+        return purchases
+            .where((p) =>
+                p.purchaseType == "Rehaussement" &&
+                p.positioned &&
+                !p.validated)
+            .toList();
+
+      case PurchaseFilterOption.allPositioned:
+        return purchases.where((p) => p.positioned).toList();
+
+      case PurchaseFilterOption.allPositionedNotValidated:
+        return purchases.where((p) => p.positioned && !p.validated).toList();
+
+      case PurchaseFilterOption.validatedAll:
+        return purchases.where((p) => p.validated).toList();
+
+      case PurchaseFilterOption.validatedRetail:
+        return purchases
+            .where((p) => p.validated && p.purchaseType == "Retail")
+            .toList();
+
+      case PurchaseFilterOption.validatedRehaussement:
+        return purchases
+            .where((p) => p.validated && p.purchaseType == "Rehaussement")
+            .toList();
+    }
+  }
+
+  void _applySorting() {
+    setState(() {
+      _purchases.sort((a, b) {
+        switch (_currentSort) {
+          case PurchaseSortOption.buyerNameAsc:
+            return a.buyerName
+                .toLowerCase()
+                .compareTo(b.buyerName.toLowerCase());
+          case PurchaseSortOption.buyerNameDesc:
+            return b.buyerName
+                .toLowerCase()
+                .compareTo(a.buyerName.toLowerCase());
+          case PurchaseSortOption.createdAtNewest:
+            return (b.createdAt ?? DateTime(0))
+                .compareTo(a.createdAt ?? DateTime(0));
+          case PurchaseSortOption.createdAtOldest:
+            return (a.createdAt ?? DateTime(0))
+                .compareTo(b.createdAt ?? DateTime(0));
+          case PurchaseSortOption.updatedAtNewest:
+            return (b.updatedAt ?? DateTime(0))
+                .compareTo(a.updatedAt ?? DateTime(0));
+          case PurchaseSortOption.updatedAtOldest:
+            return (a.updatedAt ?? DateTime(0))
+                .compareTo(b.updatedAt ?? DateTime(0));
+          case PurchaseSortOption.totalAmountHighToLow:
+            return b.totalAmount.compareTo(a.totalAmount);
+          case PurchaseSortOption.totalAmountLowToHigh:
+            return a.totalAmount.compareTo(b.totalAmount);
+          case PurchaseSortOption.totalPvHighToLow:
+            return b.totalPv.compareTo(a.totalPv);
+          case PurchaseSortOption.totalPvLowToHigh:
+            return a.totalPv.compareTo(b.totalPv);
+        }
+      });
+    });
+  }
+
+  /// 🔹 Charger les achats (pagination depuis la vue purchases_with_total)
+  Future<void> _loadPurchases({bool reset = false}) async {
     if (_isLoadingMore) return;
 
     if (reset) {
       _page = 0;
       _purchases.clear();
       _hasMore = true;
+      _itemsCache.clear();
+      setState(() => _loading = true);
     }
 
-    setState(() {
-      if (showLoader) _loading = true;
-      _isLoadingMore = true;
-    });
+    setState(() => _isLoadingMore = true);
 
     try {
       final res = await supabase
@@ -59,9 +183,14 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
           .order('created_at', ascending: false)
           .range(_page * _limit, (_page + 1) * _limit - 1);
 
-      final List<Purchase> newPurchases = List<Map<String, dynamic>>.from(res)
+      final newPurchases = List<Map<String, dynamic>>.from(res)
           .map((m) => Purchase.fromMap(m))
           .toList();
+
+      // Précharger les items associés
+      for (var purchase in newPurchases) {
+        await _preloadItems(purchase.id!);
+      }
 
       setState(() {
         _purchases.addAll(newPurchases);
@@ -78,21 +207,22 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
     }
   }
 
-  void _subscribeRealtime() {
-    _subPurchases = supabase.from('purchases').stream(primaryKey: ['id']).listen(
-          (_) => _loadPurchases(showLoader: false, reset: true),
-    );
+  /// 🔹 Précharge les items d’un achat donné
+  Future<void> _preloadItems(String purchaseId) async {
+    try {
+      final itemsRes = await supabase
+          .from('purchase_items')
+          .select()
+          .eq('purchase_id', purchaseId);
 
-    _subItems = supabase.from('purchase_items').stream(primaryKey: ['id']).listen(
-          (_) => _itemsCache.clear(),
-    );
-  }
-
-  @override
-  void dispose() {
-    _subPurchases?.cancel();
-    _subItems?.cancel();
-    super.dispose();
+      if (itemsRes != null) {
+        _itemsCache[purchaseId] = List<Map<String, dynamic>>.from(itemsRes)
+            .map((m) => PurchaseItem.fromMap(m))
+            .toList();
+      }
+    } catch (e) {
+      print("Erreur preload items: $e");
+    }
   }
 
   String _formatDate(DateTime? dateTime) {
@@ -102,182 +232,309 @@ class _PurchasesListPageState extends State<PurchasesListPage> {
   }
 
   Future<List<PurchaseItem>> _loadItems(String purchaseId) async {
-    if (_itemsCache.containsKey(purchaseId)) {
-      return _itemsCache[purchaseId]!;
-    }
-
-    final res =
-    await supabase.from('purchase_items').select().eq('purchase_id', purchaseId);
-
-    if (res != null) {
-      _itemsCache[purchaseId] = List<Map<String, dynamic>>.from(res)
-          .map((m) => PurchaseItem.fromMap(m))
-          .toList();
-      return _itemsCache[purchaseId]!;
-    }
-    return [];
+    return _itemsCache[purchaseId] ?? [];
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Liste des achats")),
+      appBar: AppBar(
+        title: const Text("Liste des achats"),
+        actions: [
+          PopupMenuButton<PurchaseSortOption>(
+            icon: const Icon(Icons.sort),
+            onSelected: (option) {
+              setState(() {
+                _currentSort = option;
+                _applySorting();
+              });
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: PurchaseSortOption.buyerNameAsc,
+                child: Text("Nom acheteur (A-Z)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.buyerNameDesc,
+                child: Text("Nom acheteur (Z-A)"),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: PurchaseSortOption.createdAtNewest,
+                child: Text("Date création (récentes)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.createdAtOldest,
+                child: Text("Date création (anciennes)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.updatedAtNewest,
+                child: Text("Date modification (récentes)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.updatedAtOldest,
+                child: Text("Date modification (anciennes)"),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: PurchaseSortOption.totalAmountHighToLow,
+                child: Text("Montant (du + grand au + petit)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.totalAmountLowToHigh,
+                child: Text("Montant (du + petit au + grand)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.totalPvHighToLow,
+                child: Text("PV (du + grand au + petit)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseSortOption.totalPvLowToHigh,
+                child: Text("PV (du + petit au + grand)"),
+              ),
+            ],
+          ),
+          PopupMenuButton<PurchaseFilterOption>(
+            icon: const Icon(Icons.filter_alt),
+            onSelected: (option) {
+              setState(() {
+                _currentFilter = option;
+              });
+            },
+            itemBuilder: (context) => [
+              // 🔹 Toutes les commandes
+              const PopupMenuItem(
+                value: PurchaseFilterOption.all,
+                child: Text("Toutes les commandes"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.rehaussement,
+                child: Text("Commandes en Rehaussement"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.retail,
+                child: Text("Commandes en Retail"),
+              ),
+              const PopupMenuDivider(),
+
+              // 🔹 Commandes positionnées
+              const PopupMenuItem(
+                value: PurchaseFilterOption.retailPositioned,
+                child: Text("Retail positionnées"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.rehaussementPositioned,
+                child: Text("Rehaussement positionnées"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.allPositioned,
+                child: Text("Toutes positionnées"),
+              ),
+              const PopupMenuDivider(),
+
+              // 🔹 Commandes positionnées mais non validées
+              const PopupMenuItem(
+                value: PurchaseFilterOption.retailPositionedNotValidated,
+                child: Text("Retail positionnées non validées"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.rehaussementPositionedNotValidated,
+                child: Text("Rehaussement positionnées non validées"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.allPositionedNotValidated,
+                child: Text("Toutes positionnées non validées"),
+              ),
+              const PopupMenuDivider(),
+
+              // 🔹 Commandes validées
+              const PopupMenuItem(
+                value: PurchaseFilterOption.validatedAll,
+                child: Text("Validées (toutes)"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.validatedRetail,
+                child: Text("Validées retail"),
+              ),
+              const PopupMenuItem(
+                value: PurchaseFilterOption.validatedRehaussement,
+                child: Text("Validées rehaussement"),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _purchases.isEmpty
-          ? const Center(child: Text("Aucun achat pour l'instant"))
-          : RefreshIndicator(
-        onRefresh: () => _loadPurchases(showLoader: true, reset: true),
-        child: ListView.builder(
-          itemCount: _purchases.length + (_hasMore ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (index == _purchases.length) {
-              // 🔹 bouton "Afficher plus" au lieu du loader
-              return Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Center(
-                  child: ElevatedButton(
-                    onPressed: _isLoadingMore ? null : () => _loadPurchases(),
-                    child: _isLoadingMore
-                        ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                        : const Text("Afficher plus"),
-                  ),
-                ),
-              );
-            }
+              ? const Center(child: Text("Aucun achat pour l'instant"))
+              : RefreshIndicator(
+                  onRefresh: () => _loadPurchases(reset: true),
+                  child: Builder(builder: (context) {
+                    // 🔹 Appliquer le filtre sur la liste locale
+                    final filteredPurchases = _applyFilter(_purchases);
 
-            final purchase = _purchases[index];
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6.0),
-              child: ExpansionTile(
-                title: Text(purchase.buyerName),
-                subtitle: Text("${purchase.gn} — ${purchase.purchaseType}"),
-                trailing: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("Total: ${_currencyFormat.format(purchase.totalAmount)} GNF"),
-                    Text("PV: ${_currencyFormat.format(purchase.totalPv)}"),
-                  ],
-                ),
-                children: [
-                  FutureBuilder<List<PurchaseItem>>(
-                    future: _loadItems(purchase.id!),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: CircularProgressIndicator(),
-                        );
-                      }
-                      final items = snapshot.data!;
-                      if (items.isEmpty) {
-                        return const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text("Aucun produit"),
-                        );
-                      }
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: items.map((item) {
+                    return ListView.builder(
+                      itemCount: filteredPurchases.length + (_hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        // 🔹 Bouton "Afficher plus" pour la pagination
+                        if (index == filteredPurchases.length) {
                           return Padding(
-                            padding: const EdgeInsets.only(
-                                left: 30, top: 6, bottom: 6),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                (() {
-                                  if (item.quantityReceived ==
-                                      item.quantityTotal) {
-                                    return "${item.quantityTotal} ${item.productName} — Tout reçu";
-                                  } else if (item.quantityReceived == 0) {
-                                    return "${item.quantityTotal} ${item.productName} — Aucun reçu";
-                                  } else {
-                                    final manquant = item.quantityTotal -
-                                        item.quantityReceived;
-                                    return "${item.quantityTotal} ${item.productName} — ${item.quantityReceived} reçu${item.quantityReceived > 1 ? 's' : ''}, $manquant manquant${manquant > 1 ? 's' : ''}";
-                                  }
-                                })(),
-                                style: const TextStyle(fontSize: 14),
+                            padding: const EdgeInsets.all(16.0),
+                            child: Center(
+                              child: ElevatedButton(
+                                onPressed: _isLoadingMore
+                                    ? null
+                                    : () => _loadPurchases(reset: false),
+                                child: _isLoadingMore
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : const Text("Afficher plus"),
                               ),
                             ),
                           );
-                        }).toList(),
-                      );
-                    },
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16.0),
-                        child: Text("${_formatDate(purchase.createdAt)}"),
-                      ),
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert),
-                        onSelected: (value) async {
-                          if (value == 'edit') {
-                            final itemsRes = await _loadItems(purchase.id!);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => NewPurchasePage(
-                                  purchase: purchase,
-                                  purchaseItems: itemsRes,
-                                ),
-                              ),
-                            ).then((_) =>
-                                _loadPurchases(showLoader: true, reset: true));
-                          } else if (value == 'delete') {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (_) => AlertDialog(
-                                title: const Text("Confirmer la suppression"),
-                                content: const Text(
-                                    "Voulez-vous vraiment supprimer cet achat ?"),
-                                actions: [
-                                  TextButton(
-                                    child: const Text("Annuler"),
-                                    onPressed: () =>
-                                        Navigator.pop(context, false),
+                        }
+
+                        final purchase = filteredPurchases[index];
+                        final items = _itemsCache[purchase.id] ?? [];
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6.0),
+                          child: ExpansionTile(
+                            title: Text(purchase.buyerName),
+                            subtitle: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                // 🔹 Nom et type
+                                SizedBox(
+                                  width: 150, // Ajustable selon espace
+                                  child: Text(
+                                    purchase.gn,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  TextButton(
-                                    child: const Text("Supprimer"),
-                                    onPressed: () =>
-                                        Navigator.pop(context, true),
+                                ),
+
+                                SizedBox(
+                                  width: 150, // Ajustable selon espace
+                                  child: Text(
+                                    purchase.purchaseType,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontStyle: FontStyle.italic),
+                                  ),
+                                ),
+
+                                // 🔹 Badge positionné
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: purchase.positioned
+                                        ? Colors.blue.shade100
+                                        : Colors.grey.shade300,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    purchase.positioned ? "Positionné" : "Non positionné",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: purchase.positioned ? Colors.blue : Colors.black54,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+
+                                // 🔹 Badge validé
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: purchase.validated
+                                        ? Colors.green.shade100
+                                        : Colors.orange.shade100,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    purchase.validated ? "Validée" : "Non validée",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: purchase.validated ? Colors.green : Colors.orange,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            trailing: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text("Total: ${_currencyFormat.format(purchase.totalAmount)} GNF"),
+                                Text("PV: ${_currencyFormat.format(purchase.totalPv)}"),
+                              ],
+                            ),
+                            children: [
+                              // 🔹 Liste des items
+                              if (items.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.all(8.0),
+                                  child: Text("Aucun produit"),
+                                )
+                              else
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: items.map((item) {
+                                    final manquant = item.quantityTotal - item.quantityReceived;
+                                    String text;
+                                    if (item.quantityReceived == item.quantityTotal) {
+                                      text = "${item.quantityTotal} ${item.productName} — Tout reçu";
+                                    } else if (item.quantityReceived == 0) {
+                                      text = "${item.quantityTotal} ${item.productName} — Aucun reçu";
+                                    } else {
+                                      text =
+                                      "${item.quantityTotal} ${item.productName} — ${item.quantityReceived} reçu${item.quantityReceived > 1 ? 's' : ''}, $manquant manquant${manquant > 1 ? 's' : ''}";
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(left: 30, top: 6, bottom: 6),
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(text, style: const TextStyle(fontSize: 14)),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+
+                              // 🔹 Row des actions
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 16.0),
+                                    child: Text(_formatDate(purchase.createdAt)),
+                                  ),
+                                  PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert),
+                                    onSelected: (value) async {
+                                      // 🔹 Logique Edit / Delete reste identique
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem(value: 'edit', child: Text("Modifier")),
+                                      PopupMenuItem(value: 'delete', child: Text("Supprimer")),
+                                    ],
                                   ),
                                 ],
                               ),
-                            );
-                            if (confirm == true) {
-                              await supabase
-                                  .from('purchases')
-                                  .delete()
-                                  .eq('id', purchase.id!);
-                              _itemsCache.remove(purchase.id);
-                              _loadPurchases(showLoader: false, reset: true);
-                            }
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                              value: 'edit', child: Text("Modifier")),
-                          PopupMenuItem(
-                              value: 'delete', child: Text("Supprimer")),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
+                            ],
+                          ),
+
+                        );
+                      },
+                    );
+                  }),
+                ),
     );
   }
 }

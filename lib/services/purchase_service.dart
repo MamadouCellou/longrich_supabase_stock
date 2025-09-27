@@ -77,4 +77,31 @@ class PurchaseService {
     });
   }
 
+  /// 🔹 Marquer comme positionnée
+  Future<bool> markPositioned(String purchaseId) async {
+    try {
+      await supabase
+          .from('purchases')
+          .update({'positioned': true})
+          .eq('id', purchaseId);
+      return true;
+    } catch (e) {
+      print("Erreur positionner: $e");
+      return false;
+    }
+  }
+
+  /// 🔹 Marquer comme validée
+  Future<bool> markValidated(String purchaseId) async {
+    try {
+      await supabase
+          .from('purchases')
+          .update({'validated': true})
+          .eq('id', purchaseId);
+      return true;
+    } catch (e) {
+      print("Erreur validation: $e");
+      return false;
+    }
+  }
 }
